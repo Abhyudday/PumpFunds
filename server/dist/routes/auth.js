@@ -32,7 +32,7 @@ router.post('/register', [
        VALUES ($1, $2, $3, $4) RETURNING id, email, solana_wallet_pubkey, created_at`, [email, passwordHash, wallet.publicKey, wallet.encryptedPrivateKey]);
         const user = result.rows[0];
         const token = (0, jwt_1.generateToken)(user.id);
-        res.status(201).json({
+        return res.status(201).json({
             message: 'User created successfully',
             token,
             user: {
@@ -68,7 +68,7 @@ router.post('/login', [
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         const token = (0, jwt_1.generateToken)(user.id);
-        res.json({
+        return res.json({
             message: 'Login successful',
             token,
             user: {
@@ -104,7 +104,7 @@ router.post('/wallet-login', [
             user = result.rows[0];
         }
         const token = (0, jwt_1.generateToken)(user.id);
-        res.json({
+        return res.json({
             message: 'Wallet login successful',
             token,
             user: {
@@ -161,7 +161,7 @@ router.patch('/profile', auth_1.authenticateToken, [
         }
         const result = await (0, database_1.query)('SELECT id, email, solana_wallet_pubkey, created_at FROM users WHERE id = $1', [userId]);
         const user = result.rows[0];
-        res.json({
+        return res.json({
             message: 'Profile updated successfully',
             user: {
                 id: user.id,

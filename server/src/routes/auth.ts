@@ -13,7 +13,7 @@ const router = Router();
 router.post('/register', [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 })
-], async (req: Request, res: Response): Promise<void> => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -49,7 +49,7 @@ router.post('/register', [
     const user = result.rows[0];
     const token = generateToken(user.id);
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'User created successfully',
       token,
       user: {
@@ -98,7 +98,7 @@ router.post('/login', [
 
     const token = generateToken(user.id);
 
-    res.json({
+    return res.json({
       message: 'Login successful',
       token,
       user: {
@@ -147,7 +147,7 @@ router.post('/wallet-login', [
 
     const token = generateToken(user.id);
 
-    res.json({
+    return res.json({
       message: 'Wallet login successful',
       token,
       user: {
@@ -226,7 +226,7 @@ router.patch('/profile', authenticateToken, [
     );
 
     const user = result.rows[0];
-    res.json({
+    return res.json({
       message: 'Profile updated successfully',
       user: {
         id: user.id,
