@@ -12,7 +12,9 @@
     "db:fix": "node dist/scripts/database-fix.js",
     "db:verify": "node dist/scripts/database-fix.js verify",
     "db:status": "node dist/scripts/database-fix.js status",
-    "db:fix-all": "npm run build && npm run db:fix && npm run db:status && npm run db:verify"
+    "db:fix-all": "npm run build && npm run db:fix && npm run db:status && npm run db:verify",
+    "railway:setup": "node dist/scripts/railway-setup.js",
+    "railway:complete": "npm run build && npm run railway:setup"
   },
   "dependencies": {
     "express": "^4.18.2",
