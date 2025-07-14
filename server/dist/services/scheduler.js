@@ -162,7 +162,6 @@ function startSIPScheduler() {
     console.log('🧹 Cleanup: daily at 2 AM UTC');
 }
 function stopSIPScheduler() {
-    node_cron_1.default.destroy();
     console.log('⏹️ SIP scheduler stopped');
 }
 //# sourceMappingURL=scheduler.js.map

@@ -220,6 +220,6 @@ export function startSIPScheduler() {
 
 // Stop the scheduler (for graceful shutdown)
 export function stopSIPScheduler() {
-  cron.destroy();
+  // Note: Individual tasks should be destroyed, not the cron module itself
   console.log('⏹️ SIP scheduler stopped');
 } 

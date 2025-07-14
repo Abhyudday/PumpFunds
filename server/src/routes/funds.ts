@@ -1,97 +1,76 @@
-import express, { Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { query } from '../services/database';
-import { authenticateToken, isAuthenticatedRequest } from '../middleware/auth';
+import { query } from '../utils/database';
+import { authenticateToken } from '../middleware/auth';
 
-const router = express.Router();
+const router = Router();
 
-// Get all active funds
+// Get all funds
 router.get('/', async (req: Request, res: Response) => {
   try {
     const result = await query(`
       SELECT 
         f.*,
-        COUNT(DISTINCT i.user_id) as investor_count,
+        COUNT(DISTINCT i.id) as investor_count,
         COALESCE(SUM(i.amount), 0) as total_invested
       FROM funds f
-      LEFT JOIN investments i ON f.id = i.fund_id
-      WHERE f.is_active = true
+      LEFT JOIN investments i ON f.id = i.fund_id AND i.status = 'active'
       GROUP BY f.id
       ORDER BY f.created_at DESC
     `);
 
-    const funds = result.rows.map((fund: any) => ({
-      id: fund.id,
-      name: fund.name,
-      description: fund.description,
-      logoUrl: fund.logo_url,
-      traderWallets: fund.trader_wallets,
-      isActive: fund.is_active,
-      createdAt: fund.created_at,
-      investorCount: parseInt(fund.investor_count),
-      totalInvested: parseFloat(fund.total_invested),
-      // TODO: Calculate actual ROI from transaction data
-      roi7d: Math.random() * 20 - 10, // Mock data for now
-      roi30d: Math.random() * 50 - 25 // Mock data for now
-    }));
-
-    res.json(funds);
+    return res.json({ funds: result.rows });
   } catch (error) {
-    console.error('Error fetching funds:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Get funds error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Get fund by ID
+// Get single fund by ID
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const fundId = parseInt(req.params.id);
+    const fundId = req.params.id;
+    if (!fundId) {
+      return res.status(400).json({ message: 'Fund ID is required' });
+    }
     
-    if (isNaN(fundId)) {
+    const fundIdNum = parseInt(fundId, 10);
+    if (isNaN(fundIdNum)) {
       return res.status(400).json({ message: 'Invalid fund ID' });
     }
 
     const result = await query(`
       SELECT 
         f.*,
-        COUNT(DISTINCT i.user_id) as investor_count,
+        COUNT(DISTINCT i.id) as investor_count,
         COALESCE(SUM(i.amount), 0) as total_invested
       FROM funds f
-      LEFT JOIN investments i ON f.id = i.fund_id
+      LEFT JOIN investments i ON f.id = i.fund_id AND i.status = 'active'
       WHERE f.id = $1
       GROUP BY f.id
-    `, [fundId]);
+    `, [fundIdNum]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Fund not found' });
     }
 
-    const fund = result.rows[0];
-    res.json({
-      id: fund.id,
-      name: fund.name,
-      description: fund.description,
-      logoUrl: fund.logo_url,
-      traderWallets: fund.trader_wallets,
-      isActive: fund.is_active,
-      createdAt: fund.created_at,
-      investorCount: parseInt(fund.investor_count),
-      totalInvested: parseFloat(fund.total_invested),
-      roi7d: Math.random() * 20 - 10, // Mock data
-      roi30d: Math.random() * 50 - 25 // Mock data
-    });
+    return res.json({ fund: result.rows[0] });
   } catch (error) {
-    console.error('Error fetching fund:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Get fund error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Create new fund (admin only - simplified for now)
+// Create new fund (admin only)
 router.post('/', authenticateToken, [
   body('name').notEmpty().trim(),
   body('description').notEmpty().trim(),
-  body('traderWallets').isArray().isLength({ min: 1 }),
-  body('logoUrl').optional().isURL()
+  body('strategy').notEmpty().trim(),
+  body('trader_wallet').notEmpty().trim(),
+  body('min_investment').isNumeric(),
+  body('max_investment').optional().isNumeric(),
+  body('management_fee').isNumeric(),
+  body('performance_fee').isNumeric()
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -99,45 +78,57 @@ router.post('/', authenticateToken, [
       return res.status(400).json({ message: 'Invalid input', errors: errors.array() });
     }
 
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ message: 'Authentication required' });
+    const userId = (req as any).user.userId;
+    
+    // Check if user is admin (simplified check - in production, use proper role system)
+    const userResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !userResult.rows[0].email?.includes('admin')) {
+      return res.status(403).json({ message: 'Admin access required' });
     }
 
-    const { name, description, traderWallets, logoUrl } = req.body;
+    const {
+      name,
+      description,
+      strategy,
+      trader_wallet,
+      min_investment,
+      max_investment,
+      management_fee,
+      performance_fee
+    } = req.body;
 
-    // Insert new fund
     const result = await query(`
-      INSERT INTO funds (name, description, logo_url, trader_wallets, is_active)
-      VALUES ($1, $2, $3, $4, true)
+      INSERT INTO funds (
+        name, description, strategy, trader_wallet, min_investment, 
+        max_investment, management_fee, performance_fee, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
       RETURNING *
-    `, [name, description, logoUrl || null, traderWallets]);
+    `, [
+      name, description, strategy, trader_wallet,
+      parseFloat(min_investment), max_investment ? parseFloat(max_investment) : null,
+      parseFloat(management_fee), parseFloat(performance_fee)
+    ]);
 
-    const fund = result.rows[0];
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Fund created successfully',
-      fund: {
-        id: fund.id,
-        name: fund.name,
-        description: fund.description,
-        logoUrl: fund.logo_url,
-        traderWallets: fund.trader_wallets,
-        isActive: fund.is_active,
-        createdAt: fund.created_at
-      }
+      fund: result.rows[0]
     });
   } catch (error) {
-    console.error('Error creating fund:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Create fund error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Update fund (admin only)
-router.patch('/:id', authenticateToken, [
+router.put('/:id', authenticateToken, [
   body('name').optional().notEmpty().trim(),
   body('description').optional().notEmpty().trim(),
-  body('traderWallets').optional().isArray(),
-  body('logoUrl').optional().isURL(),
-  body('isActive').optional().isBoolean()
+  body('strategy').optional().notEmpty().trim(),
+  body('min_investment').optional().isNumeric(),
+  body('max_investment').optional().isNumeric(),
+  body('management_fee').optional().isNumeric(),
+  body('performance_fee').optional().isNumeric(),
+  body('status').optional().isIn(['active', 'paused', 'closed'])
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -145,112 +136,111 @@ router.patch('/:id', authenticateToken, [
       return res.status(400).json({ message: 'Invalid input', errors: errors.array() });
     }
 
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ message: 'Authentication required' });
+    const fundId = req.params.id;
+    if (!fundId) {
+      return res.status(400).json({ message: 'Fund ID is required' });
     }
-
-    const fundId = parseInt(req.params.id);
-    if (isNaN(fundId)) {
+    
+    const fundIdNum = parseInt(fundId, 10);
+    if (isNaN(fundIdNum)) {
       return res.status(400).json({ message: 'Invalid fund ID' });
     }
 
-    const { name, description, traderWallets, logoUrl, isActive } = req.body;
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
-
-    if (name !== undefined) {
-      updates.push(`name = $${paramIndex++}`);
-      values.push(name);
-    }
-    if (description !== undefined) {
-      updates.push(`description = $${paramIndex++}`);
-      values.push(description);
-    }
-    if (traderWallets !== undefined) {
-      updates.push(`trader_wallets = $${paramIndex++}`);
-      values.push(traderWallets);
-    }
-    if (logoUrl !== undefined) {
-      updates.push(`logo_url = $${paramIndex++}`);
-      values.push(logoUrl);
-    }
-    if (isActive !== undefined) {
-      updates.push(`is_active = $${paramIndex++}`);
-      values.push(isActive);
+    const userId = (req as any).user.userId;
+    
+    // Check if user is admin
+    const userResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !userResult.rows[0].email?.includes('admin')) {
+      return res.status(403).json({ message: 'Admin access required' });
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ message: 'No updates provided' });
+    const updateFields = [];
+    const updateValues = [];
+    let paramCount = 1;
+
+    const allowedFields = [
+      'name', 'description', 'strategy', 'min_investment', 
+      'max_investment', 'management_fee', 'performance_fee', 'status'
+    ];
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updateFields.push(`${field} = $${paramCount}`);
+        updateValues.push(req.body[field]);
+        paramCount++;
+      }
     }
 
-    values.push(fundId);
-    const updateQuery = `
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No valid fields to update' });
+    }
+
+    updateValues.push(fundIdNum);
+    
+    const result = await query(`
       UPDATE funds 
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE id = $${paramCount}
       RETURNING *
-    `;
-
-    const result = await query(updateQuery, values);
+    `, updateValues);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Fund not found' });
     }
 
-    const fund = result.rows[0];
-    res.json({
+    return res.json({
       message: 'Fund updated successfully',
-      fund: {
-        id: fund.id,
-        name: fund.name,
-        description: fund.description,
-        logoUrl: fund.logo_url,
-        traderWallets: fund.trader_wallets,
-        isActive: fund.is_active,
-        createdAt: fund.created_at
-      }
+      fund: result.rows[0]
     });
   } catch (error) {
-    console.error('Error updating fund:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Update fund error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Delete fund (admin only)
 router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ message: 'Authentication required' });
+    const userId = (req as any).user.userId;
+    
+    // Check if user is admin
+    const userResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !userResult.rows[0].email?.includes('admin')) {
+      return res.status(403).json({ message: 'Admin access required' });
     }
 
-    const fundId = parseInt(req.params.id);
-    if (isNaN(fundId)) {
+    const fundId = req.params.id;
+    if (!fundId) {
+      return res.status(400).json({ message: 'Fund ID is required' });
+    }
+    
+    const fundIdNum = parseInt(fundId, 10);
+    if (isNaN(fundIdNum)) {
       return res.status(400).json({ message: 'Invalid fund ID' });
     }
 
     // Check if fund has active investments
     const investmentCheck = await query(
-      'SELECT COUNT(*) as count FROM investments WHERE fund_id = $1',
-      [fundId]
+      'SELECT COUNT(*) as count FROM investments WHERE fund_id = $1 AND status = \'active\'',
+      [fundIdNum]
     );
 
     if (parseInt(investmentCheck.rows[0].count) > 0) {
       return res.status(400).json({ 
-        message: 'Cannot delete fund with active investments. Deactivate instead.' 
+        message: 'Cannot delete fund with active investments. Please close the fund instead.' 
       });
     }
 
-    const result = await query('DELETE FROM funds WHERE id = $1 RETURNING *', [fundId]);
+    const result = await query('DELETE FROM funds WHERE id = $1 RETURNING *', [fundIdNum]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Fund not found' });
     }
 
-    res.json({ message: 'Fund deleted successfully' });
+    return res.json({ message: 'Fund deleted successfully' });
   } catch (error) {
-    console.error('Error deleting fund:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Delete fund error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 

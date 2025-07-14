@@ -1,45 +1,19 @@
-import express, { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { Router } from 'express';
+import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { Keypair } from '@solana/web3.js';
-import * as crypto from 'crypto';
-import { query } from '../services/database';
-import { authenticateToken, isAuthenticatedRequest } from '../middleware/auth';
+import bcrypt from 'bcryptjs';
+import { generateToken } from '../utils/jwt';
+import { generateSolanaWallet } from '../utils/wallet';
+import { query } from '../utils/database';
+import { authenticateToken } from '../middleware/auth';
 
-const router = express.Router();
-
-// Helper function to generate and encrypt Solana wallet
-const generateWallet = () => {
-  const keypair = Keypair.generate();
-  const publicKey = keypair.publicKey.toBase58();
-  
-  // Encrypt private key (in production, use stronger encryption)
-  const privateKeyBytes = keypair.secretKey;
-  const encryptionKey = process.env.WALLET_ENCRYPTION_KEY || 'default-key-change-in-production';
-  const cipher = crypto.createCipher('aes-256-cbc', encryptionKey);
-  const encrypted = cipher.update(Buffer.from(privateKeyBytes)) + cipher.final('hex');
-  
-  return {
-    publicKey,
-    encryptedPrivateKey: encrypted
-  };
-};
-
-// Helper function to generate JWT token
-const generateToken = (userId: number) => {
-  return jwt.sign(
-    { userId },
-    process.env.JWT_SECRET || 'default-secret',
-    { expiresIn: '7d' }
-  );
-};
+const router = Router();
 
 // Register with email and password
 router.post('/register', [
   body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 8 })
-], async (req, res) => {
+  body('password').isLength({ min: 6 })
+], async (req: Request, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -49,7 +23,11 @@ router.post('/register', [
     const { email, password } = req.body;
 
     // Check if user already exists
-    const existingUser = await query('SELECT id FROM users WHERE email = $1', [email]);
+    const existingUser = await query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -59,9 +37,9 @@ router.post('/register', [
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Generate Solana wallet
-    const wallet = generateWallet();
+    const wallet = generateSolanaWallet();
 
-    // Insert user
+    // Create user
     const result = await query(
       `INSERT INTO users (email, password_hash, solana_wallet_pubkey, solana_wallet_encrypted_privkey) 
        VALUES ($1, $2, $3, $4) RETURNING id, email, solana_wallet_pubkey, created_at`,
@@ -83,7 +61,7 @@ router.post('/register', [
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -91,7 +69,7 @@ router.post('/register', [
 router.post('/login', [
   body('email').isEmail().normalizeEmail(),
   body('password').notEmpty()
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -132,14 +110,14 @@ router.post('/login', [
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Wallet login (login with just public key)
 router.post('/wallet-login', [
   body('publicKey').notEmpty().isLength({ min: 32, max: 44 })
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -181,12 +159,12 @@ router.post('/wallet-login', [
     });
   } catch (error) {
     console.error('Wallet login error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Get current user info
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/me', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId;
 
@@ -200,7 +178,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     }
 
     const user = result.rows[0];
-    res.json({
+    return res.json({
       user: {
         id: user.id,
         email: user.email,
@@ -210,14 +188,14 @@ router.get('/me', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Update user profile
 router.patch('/profile', authenticateToken, [
   body('email').optional().isEmail().normalizeEmail()
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -259,7 +237,7 @@ router.patch('/profile', authenticateToken, [
     });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
