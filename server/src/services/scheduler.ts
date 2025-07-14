@@ -83,9 +83,9 @@ async function processIndividualSIP(investment: any) {
   const mockTxSignature = generateMockTransactionSignature();
   
   await query(`
-    INSERT INTO trade_replications (investment_id, fund_id, amount, type, status)
-    VALUES ($1, $2, $3, 'sip_execution', 'completed')
-  `, [investment.id, investment.fund_id, investment.amount]);
+    INSERT INTO trade_replications (investment_id, fund_id, amount, type, status, tx_signature, trade_type)
+    VALUES ($1, $2, $3, 'sip_execution', 'completed', $4, 'buy')
+  `, [investment.id, investment.fund_id, investment.amount, mockTxSignature]);
 
   console.log(`✅ SIP ${investment.id} processed successfully. Next execution: ${nextExecution.toISOString()}`);
 }
@@ -159,12 +159,14 @@ async function monitorFundTraderWallets(fund: any) {
       const tradeAmount = parseFloat(investment.amount) * (Math.random() * 0.1); // 0-10% of investment amount
       
       await query(`
-        INSERT INTO trade_replications (investment_id, fund_id, amount, type, status)
-        VALUES ($1, $2, $3, $4, 'completed')
+        INSERT INTO trade_replications (investment_id, fund_id, amount, type, status, tx_signature, trade_type)
+        VALUES ($1, $2, $3, $4, 'completed', $5, $6)
       `, [
         investment.id,
         fund.id,
         tradeAmount,
+        'trade_replication',
+        mockTxSignature,
         Math.random() > 0.5 ? 'buy' : 'sell'
       ]);
     }

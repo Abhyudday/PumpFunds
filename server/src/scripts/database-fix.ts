@@ -293,11 +293,12 @@ async function verifyFixes() {
     // Test trade replications query
     console.log('\n3. Testing trade replications query...');
     try {
+      const mockTxSignature = 'test_' + Date.now();
       const tradeQuery = await query(`
-        INSERT INTO trade_replications (investment_id, fund_id, amount, type, status)
-        VALUES (1, 1, 100, 'sip_execution', 'completed')
+        INSERT INTO trade_replications (investment_id, fund_id, amount, type, status, tx_signature, trade_type)
+        VALUES (1, 1, 100, 'sip_execution', 'completed', $1, 'buy')
         ON CONFLICT DO NOTHING
-      `);
+      `, [mockTxSignature]);
       console.log(`   ✅ Trade replications insert works`);
     } catch (error) {
       const err = error as Error;

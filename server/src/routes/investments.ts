@@ -65,11 +65,14 @@ router.post('/', authenticateToken, [
 
     // For lumpsum investments, create immediate transaction record
     if (type === 'lumpsum') {
+      // Generate mock transaction signature
+      const mockTxSignature = 'lumpsum_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+      
       await query(`
         INSERT INTO trade_replications (
-          investment_id, fund_id, amount, type, status
-        ) VALUES ($1, $2, $3, 'investment', 'completed')
-      `, [result.rows[0].id, fund_id, amount]);
+          investment_id, fund_id, amount, type, status, tx_signature, trade_type
+        ) VALUES ($1, $2, $3, 'investment', 'completed', $4, 'buy')
+      `, [result.rows[0].id, fund_id, amount, mockTxSignature]);
     }
 
     return res.status(201).json({
