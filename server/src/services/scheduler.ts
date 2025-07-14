@@ -11,15 +11,16 @@ async function processSIPInvestments() {
       SELECT 
         i.*,
         f.name as fund_name,
-        f.trader_wallets,
+        f.trader_wallet,
         u.solana_wallet_pubkey
       FROM investments i
       JOIN funds f ON i.fund_id = f.id
       JOIN users u ON i.user_id = u.id
-      WHERE i.type = 'SIP'
-        AND i.next_execution IS NOT NULL
-        AND i.next_execution <= NOW()
-        AND f.is_active = true
+      WHERE i.type = 'sip'
+        AND i.next_execution_date IS NOT NULL
+        AND i.next_execution_date <= NOW()
+        AND f.status = 'active'
+        AND i.status = 'active'
     `);
 
     if (result.rows.length === 0) {
@@ -51,7 +52,7 @@ async function processIndividualSIP(investment: any) {
   let nextExecution = null;
   const now = new Date();
   
-  switch (investment.interval) {
+  switch (investment.frequency) {
     case 'daily':
       nextExecution = new Date(now.getTime() + 24 * 60 * 60 * 1000);
       break;
@@ -62,13 +63,13 @@ async function processIndividualSIP(investment: any) {
       nextExecution = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
       break;
     default:
-      console.error(`❌ Unknown interval: ${investment.interval}`);
+      console.error(`❌ Unknown frequency: ${investment.frequency}`);
       return;
   }
 
   // Update next execution date
   await query(
-    'UPDATE investments SET next_execution = $1 WHERE id = $2',
+    'UPDATE investments SET next_execution_date = $1 WHERE id = $2',
     [nextExecution, investment.id]
   );
 
@@ -82,9 +83,9 @@ async function processIndividualSIP(investment: any) {
   const mockTxSignature = generateMockTransactionSignature();
   
   await query(`
-    INSERT INTO trade_replications (investment_id, tx_signature, status, amount)
-    VALUES ($1, $2, 'completed', $3)
-  `, [investment.id, mockTxSignature, investment.amount]);
+    INSERT INTO trade_replications (investment_id, fund_id, amount, type, status)
+    VALUES ($1, $2, $3, 'sip_execution', 'completed')
+  `, [investment.id, investment.fund_id, investment.amount]);
 
   console.log(`✅ SIP ${investment.id} processed successfully. Next execution: ${nextExecution.toISOString()}`);
 }
@@ -106,11 +107,11 @@ async function monitorTraderWallets() {
     
     // Get all active funds with trader wallets
     const result = await query(`
-      SELECT id, name, trader_wallets 
+      SELECT id, name, trader_wallet 
       FROM funds 
-      WHERE is_active = true 
-        AND trader_wallets IS NOT NULL 
-        AND array_length(trader_wallets, 1) > 0
+      WHERE status = 'active' 
+        AND trader_wallet IS NOT NULL 
+        AND trader_wallet != ''
     `);
 
     console.log(`📊 Monitoring ${result.rows.length} active fund(s)`);
@@ -146,10 +147,10 @@ async function monitorFundTraderWallets(fund: any) {
     
     // Get all active investments for this fund
     const investments = await query(`
-      SELECT id, user_id, amount, type
+      SELECT i.id, i.user_id, i.amount, i.type
       FROM investments i
       JOIN funds f ON i.fund_id = f.id
-      WHERE f.id = $1 AND f.is_active = true
+      WHERE f.id = $1 AND f.status = 'active' AND i.status = 'active'
     `, [fund.id]);
 
     // Create mock trade replications for each investment
@@ -158,11 +159,11 @@ async function monitorFundTraderWallets(fund: any) {
       const tradeAmount = parseFloat(investment.amount) * (Math.random() * 0.1); // 0-10% of investment amount
       
       await query(`
-        INSERT INTO trade_replications (investment_id, tx_signature, status, amount, trade_type)
-        VALUES ($1, $2, 'completed', $3, $4)
+        INSERT INTO trade_replications (investment_id, fund_id, amount, type, status)
+        VALUES ($1, $2, $3, $4, 'completed')
       `, [
-        investment.id, 
-        mockTxSignature, 
+        investment.id,
+        fund.id,
         tradeAmount,
         Math.random() > 0.5 ? 'buy' : 'sell'
       ]);
