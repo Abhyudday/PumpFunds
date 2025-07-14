@@ -50,6 +50,16 @@ app.use('/api/funds', fundRoutes);
 app.use('/api/investments', investmentRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 
+// Health check endpoint for Railway and monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'PumpFunds API',
+    version: '1.0.0'
+  });
+});
+
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);
