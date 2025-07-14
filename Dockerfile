@@ -2,16 +2,16 @@
 FROM node:18-alpine
 
 # Set working directory in the container
-WORKDIR /app
+WORKDIR /app/server
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package files from server directory
+COPY server/package.json server/package-lock.json ./
 
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy source code
-COPY . .
+# Copy source code from server directory
+COPY server/ .
 
 # Build the TypeScript code
 RUN npm run build
