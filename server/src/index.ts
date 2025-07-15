@@ -10,6 +10,7 @@ import authRoutes from './routes/auth';
 import fundRoutes from './routes/funds';
 import investmentRoutes from './routes/investments';
 import portfolioRoutes from './routes/portfolio';
+import setupRoutes from './routes/setup';
 
 // Import services
 import { initDatabase } from './services/database';
@@ -43,6 +44,9 @@ app.use('/api/', limiter);
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+
+// Setup routes (for Railway deployment)
+app.use('/setup', setupRoutes);
 
 // API Routes
 app.use('/api/auth', authRoutes);
