@@ -40,9 +40,24 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/api/', limiter);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    name: 'PumpFunds API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      setup: '/setup/database',
+      api: {
+        funds: '/api/funds',
+        auth: '/api/auth',
+        investments: '/api/investments',
+        portfolio: '/api/portfolio'
+      }
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Setup routes (for Railway deployment)
